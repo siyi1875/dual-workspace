@@ -1,0 +1,1073 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dual Workspace</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..700&family=JetBrains+Mono:wght@400;500&display=swap">
+<script>
+  // Apply the saved theme before first paint so the page doesn't flash.
+  try { const t = localStorage.getItem("ws-theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}
+</script>
+<style>
+  :root {
+    --bg: #f6f5f1; --surface: #ffffff; --sunken: #f1efea; --ink: #1c1b19; --ink-2: #45433e; --muted: #6f6c64;
+    --line: #e5e2da; --line-2: #d6d2c8;
+    --claude: #b9572f; --claude-bg: #f9ebe4; --codex: #26251f; --codex-bg: #ecebe6;
+    --any: #4d5bc4; --any-bg: #e9ebf9; --me: #23704f; --me-bg: #e3f2eb;
+    --warn: #9a5b00; --warn-bg: #fdf3df; --warn-line: #ecc77d; --err: #b42318;
+    --radius: 10px; --shadow: 0 1px 2px rgba(20, 18, 12, .04), 0 0 0 .5px rgba(20, 18, 12, .02);
+    --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  :root { color-scheme: light; }
+  /* Theme: follows the system until you press the sun/moon button in the header (data-theme on <html>). */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg: #141413; --surface: #1d1d1b; --sunken: #181817; --ink: #edebe5; --ink-2: #cfccc4; --muted: #9b988f;
+      --line: #302f2b; --line-2: #3d3c37;
+      --claude: #e8916c; --claude-bg: #3a2620; --codex: #e9e8e3; --codex-bg: #2e2e2b;
+      --any: #a3adf2; --any-bg: #262a45; --me: #6fc79e; --me-bg: #1b3328;
+      --warn: #f0b75e; --warn-bg: #33281a; --warn-line: #6b5124; --err: #f08b80; --shadow: none;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #141413; --surface: #1d1d1b; --sunken: #181817; --ink: #edebe5; --ink-2: #cfccc4; --muted: #9b988f;
+    --line: #302f2b; --line-2: #3d3c37;
+    --claude: #e8916c; --claude-bg: #3a2620; --codex: #e9e8e3; --codex-bg: #2e2e2b;
+    --any: #a3adf2; --any-bg: #262a45; --me: #6fc79e; --me-bg: #1b3328;
+    --warn: #f0b75e; --warn-bg: #33281a; --warn-line: #6b5124; --err: #f08b80; --shadow: none;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.55 var(--sans);
+         font-feature-settings: "cv11", "ss03"; letter-spacing: -.006em;
+         -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; text-rendering: optimizeLegibility; }
+  .meta, .n, .pill, .feed .sub, .hist { font-variant-numeric: tabular-nums; }
+
+  /* Two columns: the work on the left, a narrow column of finished tasks on the right */
+  .layout { max-width: 1360px; margin: 0 auto; padding: 16px 20px 32px; display: grid;
+            grid-template-columns: minmax(0, 1fr) 300px; gap: 20px; align-items: start; }
+  .col-side { position: sticky; top: 66px; max-height: calc(100vh - 82px); display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+  @media (max-width: 960px) {
+    .layout { grid-template-columns: minmax(0, 1fr); }
+    .col-side { position: static; max-height: none; }
+  }
+  @media (max-width: 560px) { .layout { padding: 12px 16px 24px; } }
+  button, input, textarea { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+
+  /* Header */
+  .top { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--bg) 88%, transparent);
+         backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+  .top-in { max-width: 1360px; margin: 0 auto; display: flex; align-items: center; gap: 10px 20px; flex-wrap: wrap; padding: 10px 20px; }
+  @media (max-width: 560px) { .top-in { padding: 10px 16px; } }
+  h1 { font-size: 15px; font-weight: 600; margin: 0 auto 0 0; letter-spacing: -.02em; display: flex; align-items: center; gap: 9px; }
+  .mark { display: flex; }
+  .mark i { width: 13px; height: 13px; border-radius: 50%; background: var(--claude); box-shadow: 0 0 0 2px var(--bg); }
+  .mark i + i { background: var(--codex); margin-left: -4px; }
+  .icon-btn { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 8px; flex: none;
+              border: 1px solid var(--line); background: var(--surface); color: var(--ink-2); }
+  .icon-btn:hover { color: var(--ink); border-color: var(--line-2); }
+  .icon-btn svg { width: 16px; height: 16px; }
+  .agents { display: flex; gap: 8px; flex-wrap: wrap; min-width: 0; }
+  .agent { display: flex; align-items: center; gap: 8px; padding: 4px 12px 4px 4px; border-radius: 99px; min-width: 0;
+           background: var(--surface); border: 1px solid var(--line); font-size: 13px; font-weight: 500; color: var(--ink-2); max-width: 320px; }
+  .agent .state { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .agent .light { width: 7px; height: 7px; border-radius: 50%; background: var(--me); flex: none; }
+  .agent.busy .light { background: var(--warn); animation: pulse 1.2s infinite; }
+  .agent.missing .light { background: var(--err); }
+  @keyframes pulse { 50% { opacity: .3; } }
+
+  /* Avatars */
+  .av { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; flex: none;
+        font-size: 12px; font-weight: 600; letter-spacing: 0; box-shadow: 0 0 0 2px var(--surface); }
+  .av.claude { background: var(--claude-bg); color: var(--claude); }
+  .av.codex { background: var(--codex-bg); color: var(--codex); }
+  .av.any { background: var(--any-bg); color: var(--any); }
+  .av.me { background: var(--me-bg); color: var(--me); }
+  .av.sm { width: 22px; height: 22px; font-size: 10px; }
+  .pair { display: flex; flex: none; }
+  .pair .av + .av { margin-left: -8px; }
+
+  /* Composer */
+  .composer { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+              box-shadow: var(--shadow); padding: 14px 16px 12px; margin: 0 0 28px; display: grid; gap: 6px; }
+  .composer:focus-within { border-color: var(--line-2); }
+  .composer input[type=text], .composer textarea, .note {
+    width: 100%; background: var(--sunken); border: 1px solid var(--line); border-radius: 7px; padding: 7px 10px; }
+  .composer #f-title, .composer #f-details { background: none; border: 0; padding: 0; border-radius: 0; }
+  .composer #f-title { font-size: 16.5px; font-weight: 600; letter-spacing: -.015em; }
+  .composer #f-details { min-height: 46px; resize: vertical; color: var(--ink-2); line-height: 1.6; }
+  .composer #f-title:focus-visible, .composer #f-details:focus-visible { outline: none; }
+
+  /* Composer toolbar (Linear-style): quiet property chips that open small menus, then Auto-start and Assign */
+  .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 6px; border-top: 1px solid var(--line);
+             padding-top: 12px; margin-top: 8px; }
+  .go-right { margin-left: auto; display: flex; align-items: center; gap: 8px; flex: none; }
+  .prop { position: relative; }
+  .chip { height: 30px; display: inline-flex; align-items: center; gap: 7px; padding: 0 10px; border-radius: 8px;
+          border: 1px solid var(--line); background: var(--surface); color: var(--ink-2); font-size: 13px; font-weight: 500;
+          white-space: nowrap; max-width: 260px; }
+  .chip:hover, .chip[aria-expanded="true"] { background: var(--sunken); color: var(--ink); border-color: var(--line-2); }
+  .chip .v { overflow: hidden; text-overflow: ellipsis; }
+  .chip svg { width: 15px; height: 15px; flex: none; color: var(--muted); }
+  .chip .caret { width: 12px; height: 12px; margin-right: -3px; }
+  .chip.field { padding-right: 4px; cursor: text; }
+  .chip.field input { border: 0; background: none; padding: 0; width: 110px; font-size: 13px; color: var(--ink); }
+  .chip.field input:focus-visible { outline: none; }
+  .chip.field:focus-within { border-color: var(--line-2); background: var(--surface); box-shadow: 0 0 0 3px color-mix(in srgb, var(--any) 18%, transparent); }
+  .av.xs { width: 18px; height: 18px; font-size: 9px; box-shadow: 0 0 0 1.5px var(--surface); }
+  .chip .pair .av + .av, .menu .pair .av + .av { margin-left: -5px; }
+
+  .menu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 20; min-width: 280px; padding: 5px;
+          background: var(--surface); border: 1px solid var(--line); border-radius: 11px;
+          box-shadow: 0 10px 30px rgba(20, 18, 12, .14), 0 2px 6px rgba(20, 18, 12, .06); }
+  .menu[hidden] { display: none; }
+  .menu .item { width: 100%; display: grid; grid-template-columns: 24px minmax(0, 1fr) 16px; gap: 10px; align-items: center;
+                text-align: left; border: 0; background: none; border-radius: 7px; padding: 7px 8px; }
+  .menu .item:hover, .menu .item:focus-visible { background: var(--sunken); outline: none; }
+  .menu .item .ic { display: grid; place-items: center; color: var(--muted); }
+  .menu .item .ic svg { width: 16px; height: 16px; }
+  .menu .item b { display: block; font-size: 13px; font-weight: 500; color: var(--ink); }
+  .menu .item small { display: block; font-size: 12px; color: var(--muted); line-height: 1.4; margin-top: 1px; }
+  .menu .item .tick { color: var(--ink); visibility: hidden; }
+  .menu .item[aria-checked="true"] .tick { visibility: visible; }
+  .menu .sep { height: 1px; background: var(--line); margin: 5px 4px; }
+  .menu .head { font-size: 12px; font-weight: 500; color: var(--muted); padding: 6px 8px 4px; }
+  .menu .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 8px 4px; font-size: 13px; }
+  .menu .row input { width: 64px; height: 28px; padding: 0 8px; border: 1px solid var(--line-2); border-radius: 7px; background: var(--surface); }
+  .menu .note-sm { font-size: 12px; color: var(--muted); padding: 0 8px 6px; }
+
+  /* The repo or folder, shown only when Where isn't the workspace */
+  .where-row { display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 4px 0 10px; margin-top: 4px;
+               background: var(--sunken); border: 1px solid var(--line); border-radius: 8px; }
+  .where-row[hidden] { display: none; }
+  .where-row:focus-within { border-color: var(--line-2); }
+  #where-icon { display: grid; place-items: center; flex: none; color: var(--muted); }
+  #where-icon svg { width: 15px; height: 15px; }
+  .composer .where-row input[type=text] { flex: 1; min-width: 0; border: 0; background: none; padding: 0;
+                                          font: 12.5px/1.5 var(--mono); color: var(--ink); }
+  .composer .where-row input:focus-visible { outline: none; }
+  .where-row .btn { height: 28px; padding: 0 10px; font-size: 12.5px; flex: none; }
+  .where-row .btn[hidden] { display: none; }
+
+  .switch { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 500; color: var(--ink-2);
+            cursor: pointer; padding: 0 6px; height: 30px; user-select: none; }
+  .switch input { position: absolute; opacity: 0; pointer-events: none; }
+  .switch .track { width: 28px; height: 16px; border-radius: 99px; background: var(--line-2); position: relative; transition: background .15s; flex: none; }
+  .switch .track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%;
+                          background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, .2); transition: transform .15s; }
+  .switch input:checked + .track { background: var(--me); }
+  .switch input:checked + .track::after { transform: translateX(12px); }
+  .switch input:focus-visible + .track { outline: 2px solid var(--any); outline-offset: 2px; }
+  .composer .btn.primary { height: 30px; display: inline-flex; align-items: center; gap: 8px; padding: 0 12px 0 14px; }
+  kbd { font: 500 11px/1 var(--sans); opacity: .55; letter-spacing: .02em; }
+  @media (max-width: 560px) { .menu { min-width: min(300px, calc(100vw - 64px)); } }
+  ::placeholder { color: var(--muted); opacity: .8; }
+  input:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px solid var(--any); outline-offset: 1px; }
+  .btn { border: 1px solid var(--line-2); background: var(--surface); border-radius: 7px; padding: 5px 12px; font-size: 13px; font-weight: 500; }
+  .btn:hover { border-color: var(--muted); }
+  .btn.primary { background: var(--ink); color: var(--surface); border-color: var(--ink); padding: 5px 16px; }
+  .btn.primary:hover { opacity: .88; }
+  .btn.quiet { border-color: transparent; background: none; color: var(--muted); }
+  .btn.quiet:hover { color: var(--ink); border-color: var(--line-2); }
+  .error { color: var(--err); font-size: 13px; }
+  .error:empty { display: none; }
+
+  /* Sections */
+  .section { margin-bottom: 28px; }
+  .section > h2, .side-box > h2, .activity > summary { display: flex; align-items: baseline; gap: 7px; font-size: 13.5px;
+                  letter-spacing: -.01em; color: var(--ink); margin: 0 0 10px 2px; font-weight: 600; }
+  .section > h2 .n, .side-box > h2 .n { color: var(--muted); font-weight: 500; }
+  .section.waiting > h2::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--warn); align-self: center; }
+  .allclear { color: var(--muted); font-size: 13px; padding: 0 2px; }
+  .list { display: grid; gap: 6px; }
+
+  /* Task rows */
+  .task { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
+  .task.waiting { border-color: var(--warn-line); }
+  .task > summary { list-style: none; cursor: pointer; display: flex; gap: 10px; align-items: flex-start; padding: 9px 12px; }
+  .task > summary::-webkit-details-marker { display: none; }
+  .task > summary .main { flex: 1; min-width: 0; }
+  .task > summary:hover .title { color: var(--ink); }
+  .title { font-weight: 550; font-size: 14px; line-height: 1.4; letter-spacing: -.011em; word-break: break-word; }
+  .meta { color: var(--muted); font-size: 12.5px; margin-top: 2px; display: flex; flex-wrap: wrap; gap: 0 7px; letter-spacing: 0; }
+  .meta > * + *::before { content: "·"; margin-right: 7px; }
+  .task .snippet { color: var(--ink-2); font-size: 13px; line-height: 1.5; margin-top: 4px; display: -webkit-box; -webkit-line-clamp: 2;
+                   -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; }
+  .task[open] .snippet { display: none; }
+  .pill { flex: none; font-size: 12px; font-weight: 500; padding: 2px 9px; border-radius: 99px; white-space: nowrap; margin-top: 1px; letter-spacing: 0; }
+  .pill.waiting { background: var(--warn-bg); color: var(--warn); }
+  .pill.doing { background: var(--any-bg); color: var(--any); }
+  .pill.todo { background: var(--sunken); color: var(--ink-2); }
+  .pill.done { background: var(--me-bg); color: var(--me); }
+  .pill.doing::before { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: currentColor;
+                        margin-right: 6px; vertical-align: 1px; animation: pulse 1.2s infinite; }
+  .chev { flex: none; color: var(--muted); font-size: 20px; line-height: 1; width: 12px; transition: transform .15s; margin-top: 2px; }
+  .task[open] > summary .chev { transform: rotate(90deg); }
+  @media (max-width: 560px) {
+    .task > summary { flex-wrap: wrap; row-gap: 8px; }
+    .task > summary .main { flex-basis: calc(100% - 70px); }
+    .pill { order: 3; margin: 0 0 0 40px; }
+    .chev { display: none; }
+  }
+
+  .body { padding: 0 12px 12px 48px; display: grid; gap: 10px; }
+  @media (max-width: 560px) { .body { padding-left: 12px; } }
+  .block h3, .actions > h3 { font-size: 12.5px; font-weight: 600; letter-spacing: -.005em; color: var(--muted); margin: 0 0 4px; }
+  .text { white-space: pre-wrap; word-break: break-word; color: var(--ink-2); line-height: 1.6; max-width: 76ch; }
+  .clamp { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+  .linkish { border: 0; background: none; padding: 2px 0; color: var(--any); font-size: 13px; }
+  .callout { background: var(--warn-bg); border-radius: 8px; padding: 10px 14px; }
+  .callout h3 { color: var(--warn); }
+  .callout .text { color: var(--ink); }
+  .result { background: var(--sunken); border-left: 3px solid var(--me); border-radius: 4px 8px 8px 4px; padding: 10px 16px 12px; }
+  .prose { color: var(--ink); line-height: 1.6; max-width: 76ch; word-break: break-word; }
+  .prose > :first-child { margin-top: 0; }
+  .prose > :last-child { margin-bottom: 0; }
+  .prose p { margin: 0 0 .7em; }
+  .prose .ph { font-size: 14px; font-weight: 600; letter-spacing: -.012em; margin: 1.3em 0 .4em; color: var(--ink); }
+  h4.ph { font-size: 15px; }
+  .prose ul, .prose ol { margin: 0 0 .7em; padding-left: 1.3em; }
+  .prose ul.nested, .prose ol.nested { padding-left: 2.6em; margin-top: -.5em; }
+  .prose li { margin: .15em 0; padding-left: .15em; }
+  .prose li::marker { color: var(--muted); }
+  .prose strong { font-weight: 600; }
+  .prose a { color: var(--any); text-underline-offset: 2px; }
+  .prose code { background: color-mix(in srgb, var(--ink) 7%, transparent); padding: 1px 5px; border-radius: 4px; font-size: 12px; word-break: break-word; }
+  .prose pre { margin: 0 0 .8em; padding: 10px 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 7px;
+               overflow-x: auto; font: 12px/1.6 var(--mono); white-space: pre; }
+  .prose hr { border: 0; border-top: 1px solid var(--line-2); margin: 1.1em 0; }
+  .prose .table { overflow-x: auto; margin: 0 0 .8em; }
+  .prose table { border-collapse: collapse; font-size: 13px; line-height: 1.45; }
+  .prose th, .prose td { text-align: left; vertical-align: top; padding: 5px 10px; border-bottom: 1px solid var(--line); }
+  .prose th { font-weight: 600; color: var(--ink-2); border-bottom-color: var(--line-2); }
+  .msg .prose { margin-top: 2px; color: var(--ink-2); }
+  .proposal .prose { padding: 2px 12px 10px; }
+  .result h3 { color: var(--me); }
+  .result .text { color: var(--ink); }
+  .round { border-left: 2px solid var(--line-2); padding: 2px 0 2px 12px; display: grid; gap: 6px; }
+  .round .you { font-size: 13px; color: var(--muted); }
+  .round .you b { color: var(--me); font-weight: 600; }
+  .callout.pr { background: var(--any-bg); }
+  .callout.pr h3 { color: var(--any); }
+  .callout ul { margin: 6px 0 0; padding-left: 18px; }
+  .tag { font-size: 11px; font-weight: 600; letter-spacing: .02em; padding: 1px 7px; border-radius: 99px;
+         background: var(--me-bg); color: var(--me); }
+  .files { margin: 0; padding-left: 18px; color: var(--ink-2); font-size: 14px; }
+  code { font: 12px/1.5 var(--mono); word-break: break-all; }
+  details.more > summary { cursor: pointer; color: var(--muted); font-size: 13px; width: fit-content; }
+  details.more > summary:hover { color: var(--ink); }
+  details.more pre { margin: 8px 0 0; padding: 10px 12px; background: var(--surface); border-radius: 8px; overflow: auto;
+                     max-height: 260px; font: 12px/1.6 var(--mono); white-space: pre-wrap; word-break: break-word; }
+  .hist { margin: 8px 0 0; padding: 0; list-style: none; font-size: 13px; color: var(--muted); display: grid; gap: 2px; }
+  .actions { display: grid; gap: 8px; }
+  .actions .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .note { min-height: 64px; resize: vertical; }
+  .hint { color: var(--muted); font-size: 13px; }
+
+  /* Discussion thread */
+  .thread { display: grid; }
+  .msg { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 0 10px; padding: 10px 0; }
+  .msg + .msg { border-top: 1px dashed var(--line-2); }
+  .msg .who { font-size: 13px; color: var(--muted); display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+  .msg .who b { color: var(--ink); font-size: 13.5px; font-weight: 600; }
+  .verdict { font-size: 11px; font-weight: 600; letter-spacing: .02em; padding: 1px 7px; border-radius: 99px; }
+  .verdict.AGREE { background: var(--me-bg); color: var(--me); }
+  .verdict.REVISE { background: var(--any-bg); color: var(--any); }
+  .verdict.ASK { background: var(--warn-bg); color: var(--warn); }
+  .msg .text { margin-top: 2px; }
+  .proposal { margin-top: 8px; border: 1px solid var(--line); border-radius: 9px; background: var(--sunken); }
+  .proposal > summary { cursor: pointer; padding: 7px 12px; font-size: 13px; font-weight: 500; color: var(--ink-2); }
+  .proposal .text { padding: 0 12px 10px; color: var(--ink); }
+  .round .prose { margin-top: 6px; }
+  .typing { color: var(--muted); font-size: 14px; padding: 8px 0 0 32px; }
+
+  /* Right column: completed tasks, then the activity log */
+  .side-box { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow);
+              display: flex; flex-direction: column; min-height: 0; flex: 0 1 auto; }
+  .side-box > h2 { margin: 0; padding: 12px 12px 6px; }
+  .done-list { list-style: none; margin: 0; padding: 0 4px 4px; overflow-y: auto; min-height: 0; }
+  @media (max-width: 960px) { .done-list { max-height: 360px; } }
+  .done-item { width: 100%; text-align: left; border: 0; background: none; border-radius: 8px; padding: 6px 8px;
+               display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; align-items: start; }
+  .done-item:hover { background: var(--sunken); }
+  .done-item .t { font-size: 13px; font-weight: 500; line-height: 1.4; letter-spacing: -.008em; display: -webkit-box; -webkit-line-clamp: 2;
+                  -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; }
+  .done-item .meta { font-size: 12px; }
+  .done-item .ok { color: var(--me); font-weight: 500; }
+  .side-empty { color: var(--muted); font-size: 13px; padding: 0 12px 10px; }
+  /* Hiding finished tasks (for demos and recordings): an eye button per row, Hide all, and a footer to bring them back */
+  .side-box > h2 .linkish { margin-left: auto; font-weight: 500; }
+  .done-list li { position: relative; }
+  .done-list li .done-item { padding-right: 34px; }
+  .hide-btn { position: absolute; top: 6px; right: 6px; width: 26px; height: 26px; display: grid; place-items: center;
+              border: 0; border-radius: 6px; background: none; color: var(--muted); opacity: 0; }
+  .hide-btn svg { width: 15px; height: 15px; }
+  .done-list li:hover .hide-btn, .hide-btn:focus-visible { opacity: 1; }
+  .hide-btn:hover { background: var(--surface); color: var(--ink); box-shadow: 0 0 0 1px var(--line-2); }
+  @media (hover: none) { .hide-btn { opacity: 1; } }
+  .done-list li.is-hidden .done-item { opacity: .5; }
+  .done-list li.is-hidden .hide-btn { opacity: 1; }
+  .side-foot { display: flex; gap: 6px; align-items: baseline; padding: 8px 12px 10px; border-top: 1px solid var(--line);
+               font-size: 12.5px; color: var(--muted); }
+  .side-foot[hidden] { display: none; }
+
+  .activity { flex: none; }
+  .activity > summary { cursor: pointer; list-style: none; margin: 0; padding: 0 2px; }
+  .activity > summary::-webkit-details-marker { display: none; }
+  .activity > summary::after { content: "Show"; font-size: 13px; font-weight: 500; color: var(--any); }
+  .activity[open] > summary::after { content: "Hide"; }
+  .feed { list-style: none; margin: 8px 0 0; padding: 2px 10px; background: var(--surface); border: 1px solid var(--line);
+          border-radius: var(--radius); max-height: 40vh; overflow-y: auto; }
+  .feed li { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 8px; padding: 7px 0; font-size: 12.5px; }
+  .feed li + li { border-top: 1px solid var(--line); }
+  .feed .msgtext { word-break: break-word; color: var(--ink-2); }
+  .feed .sub { color: var(--muted); font-size: 12px; }
+
+  dialog { width: min(880px, calc(100vw - 32px)); max-height: 82vh; border: 1px solid var(--line); border-radius: var(--radius);
+           background: var(--surface); color: var(--ink); padding: 0; }
+  #card { width: min(760px, calc(100vw - 32px)); }
+  #card .dh { align-items: flex-start; }
+  #card .dh .main { flex: 1; min-width: 0; }
+  #card-body { overflow-y: auto; max-height: calc(82vh - 64px); }
+  #card-body .body { padding: 12px 16px 16px; }
+  dialog::backdrop { background: rgba(0, 0, 0, .4); }
+  dialog .dh { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+  dialog .dh h2 { font-size: 15px; font-weight: 600; letter-spacing: -.015em; margin: 0 auto 0 0; }
+  dialog pre { margin: 0; padding: 16px 20px; overflow: auto; max-height: calc(82vh - 56px);
+               font: 12px/1.6 var(--mono); white-space: pre-wrap; word-break: break-word; }
+  footer { height: 40px; }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="top-in">
+    <h1><span class="mark" aria-hidden="true"><i></i><i></i></span>Dual Workspace</h1>
+    <div class="agents">
+      <div class="agent" id="agent-claude"><span class="av sm claude">C</span><span class="light"></span><span class="state">Claude</span></div>
+      <div class="agent" id="agent-codex"><span class="av sm codex">X</span><span class="light"></span><span class="state">Codex</span></div>
+    </div>
+    <button type="button" class="icon-btn" id="theme"></button>
+  </div>
+</header>
+
+<div class="layout">
+<main class="col-main">
+  <form class="composer" id="assign" autocomplete="off">
+    <input type="text" id="f-title" placeholder="New task: what needs doing?" aria-label="New task" required>
+    <textarea id="f-details" rows="2" placeholder="Details: goal, inputs, what done looks like, where to save it."></textarea>
+    <div class="where-row" id="where-opts" hidden>
+      <span id="where-icon"></span>
+      <input type="text" id="f-where" aria-label="Repo or folder" spellcheck="false">
+      <button type="button" class="btn" id="pick-folder" hidden>Browse…</button>
+    </div>
+    <div class="toolbar">
+      <div class="prop">
+        <button type="button" class="chip" id="chip-who" aria-haspopup="menu" aria-expanded="false" title="Who works on it"></button>
+        <div class="menu" id="menu-who" role="menu" hidden></div>
+      </div>
+      <div class="prop">
+        <button type="button" class="chip" id="chip-where" aria-haspopup="menu" aria-expanded="false" title="Where the work happens"></button>
+        <div class="menu" id="menu-where" role="menu" hidden></div>
+      </div>
+      <div class="prop" id="prop-turns" hidden>
+        <button type="button" class="chip" id="chip-turns" aria-haspopup="menu" aria-expanded="false" title="How the discussion runs"></button>
+        <div class="menu" id="menu-turns" role="menu" hidden></div>
+      </div>
+      <label class="chip field" title="Group related tasks (optional)"><span id="project-icon"></span><input type="text" id="f-project" placeholder="Project"></label>
+      <div class="go-right">
+      <label class="switch" title="On: an AI picks it up within seconds. Off: it waits in Up next until you press Start."><input type="checkbox" id="f-auto" checked role="switch"><span class="track"></span>Auto-start</label>
+      <button class="btn primary" type="submit">Assign <kbd>⌘↵</kbd></button>
+      </div>
+    </div>
+    <div class="error" id="f-error"></div>
+  </form>
+
+  <div id="sections"></div>
+</main>
+
+<aside class="col-side">
+  <section class="side-box">
+    <h2>Completed <span class="n" id="done-n"></span>
+      <button type="button" class="linkish" id="hide-all" title="Hide every finished task from this list and the activity log">Hide all</button></h2>
+    <ul class="done-list" id="done-list"></ul>
+    <div class="side-foot" id="side-foot" hidden><span id="hidden-n"></span><button type="button" class="linkish" id="show-hidden"></button></div>
+  </section>
+  <details class="activity" id="activity">
+    <summary>Activity log</summary>
+    <ul class="feed" id="feed"></ul>
+  </details>
+</aside>
+</div>
+
+<dialog id="card">
+  <div class="dh" id="card-head"></div>
+  <div id="card-body"></div>
+</dialog>
+
+<dialog id="out">
+  <div class="dh"><h2 id="out-title">Output</h2><button class="btn" id="out-close">Close</button></div>
+  <pre id="out-text"></pre>
+</dialog>
+
+<script>
+let PR_AGENT = null;
+let showHidden = false;  // reveal hidden finished tasks (dimmed) until the page is reloaded
+const EYE_OFF = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10.6 5.1A10 10 0 0 1 12 5c6 0 9.5 7 9.5 7a17 17 0 0 1-2.7 3.5M6.6 6.6C3.9 8.3 2.5 12 2.5 12S6 19 12 19a9.6 9.6 0 0 0 5.4-1.6M9.9 9.9a3 3 0 0 0 4.2 4.2M3 3l18 18"/></svg>';
+const EYE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12S6 5 12 5s9.5 7 9.5 7-3.5 7-9.5 7-9.5-7-9.5-7Z"/><circle cx="12" cy="12" r="3"/></svg>';  // who pushes approved PRs (workspace.json "pr_agent")
+const NAMES = { claude: "Claude", codex: "Codex", any: "Either", me: "You" };
+const INITIAL = { claude: "C", codex: "X", any: "?", me: "Y" };
+const SECTIONS = [["waiting", "Needs you"], ["doing", "Working now"], ["todo", "Up next"]];
+const PILL = { waiting: "Needs you", doing: "Working", todo: "Queued", done: "Done" };
+let who = "claude", first = "claude";
+let lastJSON = "", state = null, cardId = null;  // cardId: finished task shown in the #card dialog
+const openState = {};      // task id -> open?
+const proposalState = {};  // "<id>:<i>" -> open?
+const drafts = {};
+const fullBrief = new Set();
+
+async function api(path, body) {
+  const opts = body === undefined ? {} : {
+    method: "POST", headers: { "Content-Type": "application/json", "X-WS": "1" }, body: JSON.stringify(body),
+  };
+  const r = await fetch(path, opts);
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+
+function el(tag, attrs = {}, ...kids) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") n.className = v;
+    else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
+    else if (v !== false && v != null) n.setAttribute(k, v === true ? "" : v);
+  }
+  for (const k of kids.flat()) if (k != null && k !== false) n.append(k);
+  return n;
+}
+// Results and messages are Markdown. Render the common parts (headings, lists, code, tables, bold, links)
+// with DOM nodes only, so nothing in a card can inject HTML.
+function inline(text) {
+  const out = [], re = /`([^`]+)`|\*\*([^*]+)\*\*|\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)|(https?:\/\/[^\s)<>]+)/g;
+  let last = 0, m;
+  while ((m = re.exec(text))) {
+    if (m.index > last) out.push(text.slice(last, m.index));
+    if (m[1] != null) out.push(el("code", {}, m[1]));
+    else if (m[2] != null) out.push(el("strong", {}, ...inline(m[2])));
+    else out.push(el("a", { href: m[4] || m[5], target: "_blank", rel: "noopener noreferrer" }, m[3] || m[5]));
+    last = re.lastIndex;
+  }
+  if (last < text.length) out.push(text.slice(last));
+  return out;
+}
+function md(src) {
+  const root = el("div", { class: "prose" }), lines = String(src || "").replace(/\r/g, "").split("\n");
+  let para = [], list = null;
+  const flush = () => {
+    if (para.length) root.append(el("p", {}, ...inline(para.join(" "))));
+    para = []; list = null;
+  };
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i], t = line.trim();
+    let m;
+    if (t.startsWith("```")) {
+      flush();
+      const code = [];
+      while (++i < lines.length && !lines[i].trim().startsWith("```")) code.push(lines[i]);
+      root.append(el("pre", {}, code.join("\n")));
+    } else if (!t) {
+      flush();
+    } else if ((m = t.match(/^(#{1,6})\s+(.*)$/))) {
+      flush();
+      root.append(el(`h${Math.min(m[1].length + 3, 6)}`, { class: "ph" }, ...inline(m[2])));
+    } else if (/^(\*\*\*|---|___)\s*$/.test(t)) {
+      flush(); root.append(el("hr"));
+    } else if (t.startsWith("|") && lines[i + 1] && /^\s*\|?\s*:?-{2,}/.test(lines[i + 1])) {
+      flush();
+      const cells = l => l.trim().replace(/^\||\|$/g, "").split("|").map(c => c.trim());
+      const head = el("tr", {}, cells(t).map(c => el("th", {}, ...inline(c))));
+      const rows = [];
+      for (i += 2; i < lines.length && lines[i].trim().startsWith("|"); i++) rows.push(el("tr", {}, cells(lines[i]).map(c => el("td", {}, ...inline(c)))));
+      i--;
+      root.append(el("div", { class: "table" }, el("table", {}, el("thead", {}, head), el("tbody", {}, rows))));
+    } else if ((m = line.match(/^(\s*)([-*+]|\d+[.)])\s+(.*)$/))) {
+      if (para.length) { root.append(el("p", {}, ...inline(para.join(" ")))); para = []; }
+      const ordered = /\d/.test(m[2]), tag = ordered ? "ol" : "ul";
+      if (!list || list.tagName.toLowerCase() !== tag || (m[1].length >= 2) !== list._nested) {
+        list = el(tag, m[1].length >= 2 ? { class: "nested" } : {});
+        list._nested = m[1].length >= 2;
+        if (ordered) list.start = parseInt(m[2], 10);
+        root.append(list);
+      }
+      list.append(el("li", {}, ...inline(m[3])));
+    } else if (list && /^\s{2,}\S/.test(line)) {
+      list.lastChild.append(" ", ...inline(t));  // wrapped continuation of a list item
+    } else {
+      if (list) list = null;
+      para.push(t);
+    }
+  }
+  flush();
+  return root;
+}
+const av = (w, sm) => el("span", { class: `av ${w}${sm ? " sm" : ""}`, title: NAMES[w] || w }, INITIAL[w] || "?");
+const btn = (label, onclick, cls = "btn") => el("button", { type: "button", class: cls, onclick }, label);
+
+function ago(iso) {
+  if (!iso) return "";
+  const s = (Date.now() - new Date(iso)) / 1000;
+  if (s < 60) return "just now";
+  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
+async function act(id, action, body = {}) {
+  try { await api(`/api/tasks/${id}/${action}`, body); delete drafts[id]; await refresh(true); }
+  catch (e) { alert(e.message); }
+}
+
+const isDisc = (c) => c.mode === "discuss";
+async function reveal(c) {
+  try { await api(`/api/tasks/${c.id}/reveal`, {}); } catch (e) { alert(e.message); }
+}
+const lastProposer = (c) => ((c.thread || []).filter((m) => m.proposal).slice(-1)[0] || {}).who;
+const PR_NOTE = "The owner approved opening a pull request";
+const agentTurns = (c) => (c.thread || []).filter((m) => m.who !== "me").length;
+
+// The runner appends raw CLI output to "need": show the readable part, tuck the rest away.
+function splitNeed(need) {
+  const i = need.indexOf("\n\nLast output:\n");
+  return i < 0 ? [need, ""] : [need.slice(0, i), need.slice(i + 15)];
+}
+
+function noteBox(c, placeholder) {
+  const ta = el("textarea", { class: "note", placeholder });
+  ta.value = drafts[c.id] || "";
+  ta.addEventListener("input", () => (drafts[c.id] = ta.value));
+  return ta;
+}
+
+function actions(c) {
+  const owner = c.claimed_by || (c.to === "any" ? null : c.to);
+  const disc = isDisc(c);
+  const box = el("div", { class: "actions" });
+  const hand = (verb) => ["claude", "codex"].filter((a) => disc || a !== owner).map((a) =>
+    btn(disc ? `${verb === "Reopen" ? "Reopen" : "Pass"}, ${NAMES[a]} next` : `${verb} ${NAMES[a]}`,
+      () => act(c.id, "reassign", { to: a, note: drafts[c.id] || (verb === "Reopen" && !disc ? "Reopened by owner" : "") })));
+  const output = btn("Raw output", () => showOutput(c), "btn quiet");
+
+  if (c.status === "waiting" && c.pr && c.pr.status === "ask") {
+    const ta = noteBox(c, "Optional note for the PR: branch name, what to leave out…");
+    box.append(ta, el("div", { class: "row" },
+      btn("Yes, make the PR & push", () => act(c.id, "pr", { yes: true, note: ta.value }), "btn primary"),
+      btn("No PR, mark done", () => act(c.id, "pr", { yes: false, note: ta.value })),
+      output));
+  } else if (c.status === "waiting") {
+    const ta = noteBox(c, disc ? "Your decision or guidance for both of them…" : "Your answer or go-ahead…");
+    const hasProposal = disc && (c.thread || []).some((m) => m.proposal);
+    box.append(ta, el("div", { class: "row" },
+      btn(disc ? "Reply & continue" : `Reply to ${NAMES[owner] || "agent"}`,
+        () => act(c.id, "reply", { note: ta.value || "Go ahead." }), "btn primary"),
+      ...hand("Hand to"),
+      btn(hasProposal ? "Accept latest proposal" : "Mark done", () => act(c.id, "done", { note: ta.value })),
+      output));
+    if (hasProposal) box.append(el("div", { class: "hint" }, "Accept ends the discussion. If you type in the box first, your text becomes the final decision instead."));
+  } else if (c.status === "doing" || c.status === "todo") {
+    if (disc && (c.thread || []).length) {
+      const ta = noteBox(c, "Add a note. The next one to speak will see it.");
+      box.append(ta, el("div", { class: "row" }, btn("Add note", () => ta.value.trim() && act(c.id, "reply", { note: ta.value }))));
+    }
+    const row = el("div", { class: "row" });
+    if (c.status === "doing") row.append(btn("Stop", () => act(c.id, "stop")), output);
+    else {
+      if (!c.auto) row.append(btn("Start now", () => act(c.id, "start"), "btn primary"));
+      row.append(...hand("Give to"), btn("Remove", () => act(c.id, "remove"), "btn quiet"));
+    }
+    box.append(row);
+  } else {
+    // Follow-ups reopen this same card, so the whole story stays in one place.
+    const ta = noteBox(c, disc ? "Follow-up for both of them: what should change or be added?"
+                               : "Follow-up: what else should be done on this task?");
+    const prev = disc ? lastProposer(c) || "claude" : c.claimed_by || c.to;
+    const order = prev === "codex" ? ["codex", "claude"] : ["claude", "codex"];
+    const send = (to) => {
+      if (!ta.value.trim()) { ta.placeholder = "Type the follow-up first, then send it."; ta.focus(); return; }
+      act(c.id, "followup", { note: ta.value, to });
+    };
+    box.append(el("h3", {}, "Follow up on this task"), ta, el("div", { class: "row" },
+      ...order.map((a, i) => btn(disc ? `Continue, ${NAMES[a]} starts` : `Send to ${NAMES[a]}`, () => send(a), i ? "btn" : "btn primary")),
+      output));
+  }
+  return box;
+}
+
+function thread(c) {
+  const t = c.thread || [];
+  let latest = -1;
+  t.forEach((m, i) => { if (m.proposal) latest = i; });
+  const reopened = t.some((m, j) => j > latest && m.followup);
+  let n = 0;
+  const items = t.map((m, i) => {
+    const key = `${c.id}:${i}`;
+    const turn = m.who === "me" ? null : ++n;
+    let prop = null;
+    if (m.proposal) {
+      const label = i !== latest ? "Proposal (replaced later)" : reopened ? "Agreed result (before your follow-up)"
+        : c.status === "done" ? "Proposal (accepted)" : "Proposal (on the table)";
+      prop = el("details", { class: "proposal" }, el("summary", {}, label), md(m.proposal));
+      prop.open = key in proposalState ? proposalState[key] : i === latest && c.status !== "done";
+      prop.addEventListener("toggle", () => (proposalState[key] = prop.open));
+    }
+    return el("div", { class: "msg" }, av(m.who, true),
+      el("div", {},
+        el("div", { class: "who" }, el("b", {}, NAMES[m.who] || m.who), turn ? el("span", {}, `turn ${turn}`) : null,
+          m.verdict ? el("span", { class: `verdict ${m.verdict}` }, m.verdict === "AGREE" ? "AGREES" : m.verdict) : null,
+          m.followup ? el("span", { class: "tag" }, "FOLLOW-UP") : null,
+          el("span", {}, ago(m.t))),
+        md(m.message || ""), prop));
+  });
+  const live = c.status === "doing" ? el("div", { class: "typing" }, `${NAMES[c.claimed_by]} is writing turn ${n + 1}…`) : null;
+  return el("div", { class: "block" }, el("h3", {}, "Discussion"),
+    items.length ? el("div", { class: "thread" }, items) : el("div", { class: "hint" }, "No turns yet."), live);
+}
+
+function body(c) {
+  const disc = isDisc(c);
+  const b = el("div", { class: "body" });
+  if (c.pr && c.pr.status === "ask" && c.status === "waiting") {
+    b.append(el("div", { class: "callout pr block" }, el("h3", {}, "Make a pull request?"),
+      el("div", { class: "text" }, `${NAMES[c.claimed_by] || "The AI"} finished, and the work changed code that isn't in a pull request yet:`),
+      el("ul", {}, c.pr.repos.map((r) => el("li", {}, el("code", {}, r.path), ` · ${r.summary}`))),
+      el("div", { class: "hint", style: "margin-top:6px" }, `Yes sends it to ${NAMES[PR_AGENT || c.claimed_by] || "the AI"} to push a branch and open the PR. Nothing is pushed until you say so.`)));
+  } else if (c.need) {
+    const [msg, raw] = splitNeed(c.need);
+    b.append(el("div", { class: "callout" }, el("div", { class: "block" }, el("h3", {}, "Needs you"), el("div", { class: "text" }, msg)),
+      raw ? el("details", { class: "more", style: "margin-top:8px" }, el("summary", {}, "Show last output"), el("pre", {}, raw)) : null));
+  }
+  const rounds = !disc && c.followups ? c.followups : [];
+  if (c.result) b.append(el("div", { class: "result block" },
+    el("h3", {}, disc ? "Agreed result" : rounds.length ? "Latest result" : "Result"), md(c.result)));
+  if (c.where) {
+    const w = c.where;
+    b.append(el("div", { class: "block" }, el("h3", {}, "Where"), el("div", { class: "text" },
+      ...(w.kind === "github"
+        ? [el("a", { href: `https://github.com/${w.repo}`, target: "_blank", rel: "noopener noreferrer" }, `github.com/${w.repo}`),
+           " · branch ", el("code", {}, w.branch), w.base ? ` from ${w.base}` : "", " · local copy ", el("code", {}, w.path)]
+        : [el("code", {}, tilde(w.path)), " on this Mac"])),
+      btn(w.kind === "github" ? "Open local copy in Finder" : "Open in Finder", () => reveal(c), "linkish")));
+  }
+  if (c.details) {
+    const long = c.details.length > 320 || c.details.split("\n").length > 4;
+    const full = fullBrief.has(c.id);
+    const text = el("div", { class: `text${long && !full ? " clamp" : ""}` }, c.details);
+    b.append(el("div", { class: "block" }, el("h3", {}, "Brief"), text,
+      long ? el("button", { type: "button", class: "linkish", onclick: () => {
+        fullBrief.has(c.id) ? fullBrief.delete(c.id) : fullBrief.add(c.id);
+        text.classList.toggle("clamp");
+        event.target.textContent = fullBrief.has(c.id) ? "Show less" : "Show all";
+      } }, full ? "Show less" : "Show all") : null));
+  }
+  if (rounds.length) b.append(el("div", { class: "block" }, el("h3", {}, "Earlier rounds"),
+    el("div", { style: "display:grid;gap:10px" }, rounds.map((f, i) => el("div", { class: "round" },
+      el("details", { class: "more" }, el("summary", {}, `Round ${i + 1} result`), md(f.result_before || "(none)")),
+      f.note.startsWith(PR_NOTE)
+        ? el("div", { class: "you" }, el("b", {}, "You"), " approved making a pull request")
+        : el("div", {}, el("div", { class: "you" }, el("b", {}, f.who === "me" ? "You" : NAMES[f.who]), " followed up"),
+            el("div", { class: "text" }, f.note)))))));
+  if (disc) b.append(thread(c));
+  if (c.files.length) b.append(el("div", { class: "block" }, el("h3", {}, "Files"),
+    el("ul", { class: "files" }, c.files.map((f) => el("li", {}, el("code", {}, f)))),
+    c.where ? null : btn("Open folder in Finder", () => reveal(c), "linkish")));
+  b.append(actions(c));
+  b.append(el("details", { class: "more" }, el("summary", {}, `History (${c.history.length})`),
+    el("ul", { class: "hist" }, c.history.map((h) =>
+      el("li", {}, `${ago(h.t)} · ${NAMES[h.who] || h.who}: ${h.event}${h.note ? ` (${h.note})` : ""}`)),
+      el("li", {}, el("code", {}, c.id)))));
+  return b;
+}
+
+const worker = (c) => c.claimed_by || c.to;
+const avatar = (c, sm) => isDisc(c) ? el("span", { class: "pair" }, av("claude", sm), av("codex", sm)) : av(worker(c), sm);
+
+const tilde = (p) => p.replace(/^\/Users\/[^/]+/, "~");
+const whereText = (c) => c.where.kind === "github"
+  ? `GitHub repo ${c.where.repo}, branch ${c.where.branch}` : `Folder ${c.where.path}`;
+
+function metaOf(c) {
+  const disc = isDisc(c);
+  const meta = [];
+  if (disc) {
+    meta.push(el("span", {}, "Claude ⇄ Codex"), el("span", {}, `turn ${agentTurns(c)} of ${c.max_turns}`));
+    if (c.status === "todo") meta.push(el("span", {}, `${NAMES[c.turn || c.to]}'s turn`));
+  } else meta.push(el("span", {}, NAMES[worker(c)] || worker(c)));
+  if (c.project) {
+    const parent = state.cards.find((x) => x.id === c.project);  // sub-tasks use the parent's id as project
+    meta.push(el("span", {}, parent ? `part of “${parent.title}”` : c.project));
+  }
+  if (c.where) meta.push(el("span", { title: whereText(c) }, c.where.kind === "github" ? `on ${c.where.repo}` : `in ${tilde(c.where.path)}`));
+  meta.push(el("span", {}, ago(c.finished_at || c.started_at || c.created_at)));
+  if (c.followups && c.followups.length) meta.push(el("span", {}, `round ${c.followups.length + 1}`));
+  if (c.pr && c.pr.status === "approved" && c.status !== "done") meta.push(el("span", {}, "making a PR"));
+  if (!c.auto && c.status === "todo") meta.push(el("span", {}, "waiting for Start"));
+  return meta;
+}
+
+const pill = (c) => el("span", { class: `pill ${c.status}` },
+  isDisc(c) && c.status === "done" ? "Agreed" : c.status === "waiting" && c.pr && c.pr.status === "ask" ? "PR?" : PILL[c.status]);
+
+function task(c) {
+  const disc = isDisc(c);
+  const d = el("details", { class: `task ${c.status}` });
+  d.open = c.id in openState ? openState[c.id] : c.status === "waiting";
+  d.addEventListener("toggle", () => (openState[c.id] = d.open));
+  const last = disc ? (c.thread || []).slice(-1)[0] : null;
+  const snippet = last ? `${NAMES[last.who]}: ${last.message}` : c.status === "waiting" && c.need ? splitNeed(c.need)[0] : "";
+  d.append(el("summary", {},
+    avatar(c),
+    el("div", { class: "main" },
+      el("div", { class: "title" }, c.title),
+      el("div", { class: "meta" }, metaOf(c)),
+      snippet ? el("div", { class: "snippet" }, snippet) : null),
+    pill(c),
+    el("span", { class: "chev", "aria-hidden": "true" }, "›")));
+  d.append(body(c));
+  return d;
+}
+
+// Finished tasks live in the narrow right column; clicking one opens it full-size in a dialog.
+function doneItem(c) {
+  const label = isDisc(c) ? "Agreed" : NAMES[worker(c)] || worker(c);
+  const eye = el("button", { type: "button", class: "hide-btn", title: c.hidden ? "Show in the list again" : "Hide from the list",
+    "aria-label": c.hidden ? `Unhide ${c.title}` : `Hide ${c.title}`, onclick: () => act(c.id, "hide", { hidden: !c.hidden }) });
+  eye.innerHTML = c.hidden ? EYE : EYE_OFF;
+  return el("li", { class: c.hidden ? "is-hidden" : "" }, el("button", { type: "button", class: "done-item", onclick: () => openCard(c.id) },
+    avatar(c, true),
+    el("span", {}, el("span", { class: "t" }, c.title),
+      el("span", { class: "meta" }, el("span", { class: isDisc(c) ? "ok" : "" }, label), el("span", {}, ago(c.finished_at))))), eye);
+}
+
+function renderCard() {
+  const dlg = document.getElementById("card");
+  const c = state.cards.find((x) => x.id === cardId);
+  if (!c || c.status !== "done") { if (dlg.open) dlg.close(); return; }  // reopened or removed: it's back on the left
+  document.getElementById("card-head").replaceChildren(avatar(c),
+    el("div", { class: "main" }, el("div", { class: "title" }, c.title), el("div", { class: "meta" }, metaOf(c))),
+    pill(c), btn(c.hidden ? "Unhide" : "Hide", () => { if (!c.hidden) dlg.close(); act(c.id, "hide", { hidden: !c.hidden }); }, "btn quiet"),
+    btn("Close", () => dlg.close()));
+  document.getElementById("card-body").replaceChildren(body(c));
+}
+
+function openCard(id) {
+  cardId = id;
+  renderCard();
+  const dlg = document.getElementById("card");
+  if (!dlg.open) dlg.showModal();
+  document.getElementById("card-body").scrollTop = 0;
+}
+document.getElementById("card").addEventListener("close", () => (cardId = null));
+
+function render(s) {
+  state = s;
+  for (const [agent, a] of Object.entries(s.agents)) {
+    const box = document.getElementById(`agent-${agent}`);
+    box.className = "agent" + (!a.available ? " missing" : a.task ? " busy" : "");
+    const t = a.task && s.cards.find((c) => c.id === a.task);
+    box.querySelector(".state").textContent = `${NAMES[agent]}: ` + (!a.available ? "CLI not found" : t ? t.title : "idle");
+    box.title = t ? `Working on: ${t.title}` : "";
+  }
+
+  const out = [];
+  for (const [status, label] of SECTIONS) {
+    const cards = s.cards.filter((c) => c.status === status);
+    if (!cards.length) {
+      if (status === "waiting") out.push(el("section", { class: "section waiting" }, el("h2", {}, label),
+        el("div", { class: "allclear" }, "Nothing needs you right now.")));
+      continue;
+    }
+    out.push(el("section", { class: `section ${status}` },
+      el("h2", {}, label, el("span", { class: "n" }, String(cards.length))),
+      el("div", { class: "list" }, cards.map(task))));
+  }
+  document.getElementById("sections").replaceChildren(...out);
+
+  const done = s.cards.filter((c) => c.status === "done")
+    .sort((a, b) => (b.finished_at || "").localeCompare(a.finished_at || ""));
+  const hidden = done.filter((c) => c.hidden), shown = done.filter((c) => !c.hidden);
+  if (!hidden.length) showHidden = false;
+  const listed = showHidden ? done : shown;
+  document.getElementById("done-n").textContent = shown.length || "";
+  document.getElementById("hide-all").hidden = !shown.length;
+  document.getElementById("done-list").replaceChildren(...(listed.length ? listed.map(doneItem)
+    : [el("li", { class: "side-empty" }, hidden.length ? "Nothing to show. Finished tasks are hidden." : "Finished tasks will show up here.")]));
+  document.getElementById("side-foot").hidden = !hidden.length;
+  document.getElementById("hidden-n").textContent = `${hidden.length} hidden ·`;
+  document.getElementById("show-hidden").textContent = showHidden ? "Hide them again" : "Show";
+  if (cardId) renderCard();
+
+  const titles = Object.fromEntries(s.cards.map((c) => [c.id, c.title]));
+  const hiddenIds = new Set(hidden.map((c) => c.id));
+  const visibleProjects = new Set(s.cards.filter((c) => !c.hidden).map((c) => c.project));
+  const hiddenProjects = new Set(hidden.map((c) => c.project).filter((p) => p && !visibleProjects.has(p)));
+  // General notes (no task) can mention any project, so they're held back too while anything is hidden.
+  const feed = showHidden || !hidden.length ? s.log
+    : s.log.filter((e) => e.task && !hiddenIds.has(e.task) && !hiddenProjects.has(e.project));
+  document.getElementById("feed").replaceChildren(...feed.slice(-80).reverse().map((e) => {
+    const sub = [e.task && titles[e.task] && !e.msg.includes(titles[e.task]) ? titles[e.task] : "", ago(e.t)].filter(Boolean).join(" · ");
+    return el("li", {}, av(e.who, true),
+      el("div", {}, el("div", { class: "msgtext" }, e.msg), el("div", { class: "sub" }, sub)));
+  }));
+}
+
+async function refresh(force = false) {
+  try {
+    const s = await api("/api/state");
+    PR_AGENT = s.pr_agent || null;
+    const json = JSON.stringify(s);
+    const a = document.activeElement;
+    const typing = a && a.matches("textarea, input") && a.closest(".task, #card");
+    document.getElementById("f-error").textContent = "";
+    if ((json !== lastJSON && !typing) || force) { lastJSON = json; render(s); }
+  } catch (e) {
+    document.getElementById("f-error").textContent = "Can't reach ws.py. Is `python3 ws.py serve` running?";
+  }
+}
+
+let outTimer;
+async function showOutput(c) {
+  const dlg = document.getElementById("out");
+  document.getElementById("out-title").textContent = c.title;
+  const load = async () => {
+    const r = await api(`/api/tasks/${c.id}/output`);
+    const pre = document.getElementById("out-text");
+    const atBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 20;
+    pre.textContent = r.text || "No automatic run for this task yet.";
+    if (atBottom) pre.scrollTop = pre.scrollHeight;
+  };
+  await load();
+  if (!dlg.open) dlg.showModal();
+  clearInterval(outTimer);
+  if (c.status === "doing") outTimer = setInterval(load, 3000);
+}
+document.getElementById("out-close").onclick = () => document.getElementById("out").close();
+document.getElementById("out").addEventListener("close", () => clearInterval(outTimer));
+
+// Composer toolbar: Who / Where / (discussion) chips, each opening a small menu.
+const SVG = {
+  caret: '<svg class="caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>',
+  tick: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5 10 17 19 7"/></svg>',
+  box: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 7.5 12 3l8.5 4.5v9L12 21l-8.5-4.5z"/><path d="M3.5 7.5 12 12l8.5-4.5M12 12v9"/></svg>',
+  branch: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="7" r="2"/><path d="M6 7v10M18 9c0 5-6 4-11.2 8.6"/></svg>',
+  folder: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4.6l2 2.2h8.4A1.5 1.5 0 0 1 21 8.7v9.8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.5z"/></svg>',
+  hash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 9h15M4 15h15M10 4 8 20M16 4l-2 16"/></svg>',
+  turns: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h11l-3-3M20 17H9l3 3"/></svg>',
+};
+const svgEl = (k) => { const t = document.createElement("template"); t.innerHTML = SVG[k].trim(); return t.content.firstChild; };
+const avXs = (w) => el("span", { class: `av xs ${w}` }, INITIAL[w]);
+const pairXs = () => el("span", { class: "pair" }, avXs("claude"), avXs("codex"));
+
+const WHO_OPTS = [
+  ["claude", "Claude", "Claude Code"],
+  ["codex", "Codex", "Codex in ChatGPT"],
+  ["any", "Either", "Whoever is free first"],
+  ["both", "Both discuss", "They take turns until one accepts the other's proposal"],
+];
+const FIRST_OPTS = [["claude", "Claude starts"], ["codex", "Codex starts"], ["any", "Either starts"]];
+const WHERE_OPTS = [
+  ["workspace", "Workspace", "Files go in shared/ in this workspace", "box"],
+  ["github", "GitHub repo", "A fresh copy on a new branch, ending with a PR question", "branch"],
+  ["folder", "Folder on this Mac", "Work directly in a project you already have", "folder"],
+];
+let where = "workspace";
+const savedWhere = {};
+try { Object.assign(savedWhere, JSON.parse(localStorage.getItem("ws-where") || "{}")); } catch (e) {}
+
+function menuItem(checked, icon, title, sub, onPick) {
+  return el("button", { type: "button", class: "item", role: "menuitemradio", "aria-checked": String(checked),
+    onclick: () => { onPick(); closeMenus(true); } },
+    el("span", { class: "ic" }, icon), el("span", {}, el("b", {}, title), sub ? el("small", {}, sub) : null), el("span", { class: "tick" }, svgEl("tick")));
+}
+
+function paintComposer() {
+  const both = who === "both";
+  const wo = WHO_OPTS.find((o) => o[0] === who);
+  document.getElementById("chip-who").replaceChildren(both ? pairXs() : avXs(who), el("span", { class: "v" }, wo[1]), svgEl("caret"));
+  document.getElementById("menu-who").replaceChildren(...WHO_OPTS.map(([v, t, sub]) =>
+    menuItem(v === who, v === "both" ? pairXs() : avXs(v), t, sub, () => setWho(v))));
+
+  const w = WHERE_OPTS.find((o) => o[0] === where);
+  const val = document.getElementById("f-where").value.trim();
+  const short = where === "github" ? val.replace(/^.*github\.com[/:]/, "").replace(/\.git$/, "") : val.split("/").filter(Boolean).pop();
+  document.getElementById("chip-where").replaceChildren(svgEl(w[3]),
+    el("span", { class: "v" }, where !== "workspace" && short ? short : w[1].replace(" on this Mac", "")), svgEl("caret"));
+  document.getElementById("menu-where").replaceChildren(...WHERE_OPTS.map(([v, t, sub, ic]) =>
+    menuItem(v === where, svgEl(ic), t, sub, () => setWhere(v))));
+  document.getElementById("where-icon").replaceChildren(svgEl(w[3]));
+
+  document.getElementById("prop-turns").hidden = !both;
+  const turns = Number(document.getElementById("f-turns").value) || 8;
+  document.getElementById("chip-turns").replaceChildren(svgEl("turns"),
+    el("span", { class: "v" }, `${FIRST_OPTS.find((o) => o[0] === first)[1]} · ${turns} turns`), svgEl("caret"));
+}
+
+// The turn-limit field lives inside the discussion menu; build it once so typing in it isn't interrupted.
+(function buildTurnsMenu() {
+  const items = el("div", {});
+  const turns = el("input", { type: "number", id: "f-turns", min: "2", max: "40", value: "8", "aria-label": "Turn limit" });
+  turns.addEventListener("input", paintComposer);
+  turns.addEventListener("keydown", (ev) => { if (ev.key === "Enter") { ev.preventDefault(); closeMenus(true); } });
+  document.getElementById("menu-turns").append(el("div", { class: "head" }, "Who goes first"), items, el("div", { class: "sep" }),
+    el("label", { class: "row" }, "Turn limit", turns),
+    el("div", { class: "note-sm" }, "At the limit it comes back to you."));
+  window.paintTurnsMenu = () => items.replaceChildren(...FIRST_OPTS.map(([v, t]) =>
+    menuItem(v === first, v === "any" ? avXs("any") : avXs(v), t, "", () => { first = v; paintTurnsMenu(); })));
+  paintTurnsMenu();
+})();
+
+function setWho(v) {
+  who = v;
+  document.getElementById("f-details").placeholder = v === "both"
+    ? "What should they work out together? Goal, constraints, what the agreed result should look like."
+    : "Details: goal, inputs, what done looks like, where to save it.";
+  paintComposer();
+}
+
+function setWhere(v) {
+  const input = document.getElementById("f-where");
+  if (where !== "workspace") savedWhere[where] = input.value;
+  where = v;
+  document.getElementById("where-opts").hidden = v === "workspace";
+  input.value = v === "workspace" ? "" : savedWhere[v] || "";
+  input.placeholder = v === "github" ? "owner/repo, or a github.com link" : "/Users/you/code/my-app";
+  document.getElementById("pick-folder").hidden = v !== "folder";
+  paintComposer();
+  if (v === "folder" && !input.value) pickFolder();
+  else if (v !== "workspace") input.focus();
+}
+
+function closeMenus(refocus) {
+  for (const m of document.querySelectorAll(".composer .menu:not([hidden])")) {
+    m.hidden = true;
+    const chip = m.previousElementSibling;
+    chip.setAttribute("aria-expanded", "false");
+    if (refocus) chip.focus();
+  }
+  paintComposer();
+}
+for (const prop of document.querySelectorAll(".composer .prop")) {
+  const chip = prop.querySelector(".chip"), menu = prop.querySelector(".menu");
+  chip.addEventListener("click", () => {
+    const open = menu.hidden;
+    closeMenus();
+    if (!open) return;
+    const vw = document.documentElement.clientWidth;  // measure before the menu can widen the page
+    menu.hidden = false; menu.style.left = "0px";
+    chip.setAttribute("aria-expanded", "true");
+    // Keep the menu on screen: slide it left if it would run off the right edge, never past the left edge.
+    const r = menu.getBoundingClientRect();
+    const shift = Math.max(Math.min(0, vw - 12 - r.right), 12 - r.left);
+    menu.style.left = `${shift}px`;
+    (menu.querySelector('[aria-checked="true"]') || menu.querySelector("button, input")).focus();
+  });
+  prop.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape" && !menu.hidden) { ev.preventDefault(); closeMenus(true); }
+    if ((ev.key === "ArrowDown" || ev.key === "ArrowUp") && !menu.hidden) {
+      const items = [...menu.querySelectorAll(".item")], i = items.indexOf(document.activeElement);
+      ev.preventDefault();
+      items[(i + (ev.key === "ArrowDown" ? 1 : items.length - 1)) % items.length].focus();
+    }
+  });
+}
+// composedPath() is fixed when the click happens, so it still counts as "inside" even if the chip redrew itself meanwhile.
+document.addEventListener("click", (ev) => {
+  if (!ev.composedPath().some((n) => n.classList && n.classList.contains("prop"))) closeMenus();
+});
+document.getElementById("f-where").addEventListener("input", paintComposer);
+document.getElementById("project-icon").replaceWith(svgEl("hash"));
+paintComposer();
+
+// The server runs on this Mac, so it can show the real Finder "Choose folder" window and hand back the full path.
+async function pickFolder() {
+  const b = document.getElementById("pick-folder"), input = document.getElementById("f-where");
+  const err = document.getElementById("f-error");
+  b.disabled = true; b.textContent = "Waiting for Finder…"; err.textContent = "";
+  try {
+    const { path } = await api("/api/pick-folder", { start: input.value });
+    if (path) { input.value = path; savedWhere.folder = path; paintComposer(); }
+  } catch (e) { err.textContent = e.message; }
+  finally { b.disabled = false; b.textContent = "Browse…"; window.focus(); }
+}
+document.getElementById("pick-folder").addEventListener("click", pickFolder);
+
+const form = document.getElementById("assign");
+form.addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const err = document.getElementById("f-error");
+  err.textContent = "";
+  const both = who === "both";
+  try {
+    await api("/api/tasks", {
+      title: document.getElementById("f-title").value,
+      details: document.getElementById("f-details").value,
+      project: document.getElementById("f-project").value,
+      to: both ? first : who,
+      auto: document.getElementById("f-auto").checked,
+      mode: both ? "discuss" : "solo",
+      max_turns: both ? Number(document.getElementById("f-turns").value) || 8 : undefined,
+      where: where === "github" ? { kind: "github", repo: document.getElementById("f-where").value }
+           : where === "folder" ? { kind: "folder", path: document.getElementById("f-where").value } : undefined,
+    });
+    if (where !== "workspace") {  // remember the last repo / folder for next time
+      savedWhere[where] = document.getElementById("f-where").value;
+      try { localStorage.setItem("ws-where", JSON.stringify(savedWhere)); } catch (e) {}
+    }
+    document.getElementById("f-title").value = "";
+    document.getElementById("f-details").value = "";
+    await refresh(true);
+  } catch (e) { err.textContent = e.message; }
+});
+form.addEventListener("keydown", (ev) => {
+  if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)) form.requestSubmit();
+});
+
+// One button: shows a moon by day and a sun by night. Until it's pressed the page follows the Mac.
+const SYSTEM_DARK = matchMedia("(prefers-color-scheme: dark)");
+const ICONS = {
+  moon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"/></svg>',
+  sun: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4 6 18M18 6l1.4-1.4"/></svg>',
+};
+function themeNow() { return document.documentElement.dataset.theme || (SYSTEM_DARK.matches ? "dark" : "light"); }
+function paintThemeButton() {
+  const dark = themeNow() === "dark", btn = document.getElementById("theme");
+  btn.innerHTML = dark ? ICONS.sun : ICONS.moon;
+  btn.title = dark ? "Switch to day" : "Switch to night";
+  btn.setAttribute("aria-label", btn.title);
+}
+function setTheme(t, save) {
+  if (t === "auto") delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = t;
+  paintThemeButton();
+  if (save) try { t === "auto" ? localStorage.removeItem("ws-theme") : localStorage.setItem("ws-theme", t); } catch (e) {}
+}
+setTheme(document.documentElement.dataset.theme || "auto");
+document.getElementById("theme").addEventListener("click", () => setTheme(themeNow() === "dark" ? "light" : "dark", true));
+SYSTEM_DARK.addEventListener("change", paintThemeButton);
+document.getElementById("show-hidden").addEventListener("click", () => { showHidden = !showHidden; render(state); });
+document.getElementById("hide-all").addEventListener("click", async () => {
+  const ids = state.cards.filter((c) => c.status === "done" && !c.hidden).map((c) => c.id);
+  for (const id of ids) await api(`/api/tasks/${id}/hide`, { hidden: true }).catch(() => {});
+  refresh(true);
+});
+
+refresh(true);
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>

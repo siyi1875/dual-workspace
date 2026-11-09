@@ -1,0 +1,47 @@
+{
+  "port": 8766,
+  "poll_seconds": 4,
+  "timeout_minutes": 60,
+  "discussion_max_turns": 8,
+  "discussion_extend_turns": 4,
+  "clean_env_prefixes": [
+    "CLAUDE",
+    "ANTHROPIC_",
+    "OPENAI_API_KEY"
+  ],
+  "pr_agent": "claude",
+  "agents": {
+    "claude": {
+      "label": "Claude Code",
+      "bin": [
+        "claude",
+        "~/.local/bin/claude"
+      ],
+      "args": [
+        "-p",
+        "--permission-mode",
+        "auto",
+        "--output-format",
+        "text"
+      ]
+    },
+    "codex": {
+      "label": "ChatGPT Codex",
+      "bin": [
+        "codex",
+        "/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex"
+      ],
+      "args": [
+        "exec",
+        "--skip-git-repo-check",
+        "--sandbox",
+        "workspace-write",
+        "-c",
+        "sandbox_workspace_write.network_access=true",
+        "-o",
+        "{last_message_file}",
+        "-"
+      ]
+    }
+  }
+}

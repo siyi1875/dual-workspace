@@ -1,0 +1,14 @@
+# Your tasks, logs and deliverables stay on your machine.
+tasks/
+shared/
+_to_delete/
+_scratch/
+
+# Tool and editor caches
+__pycache__/
+*.pyc
+.gstack/
+.claude/
+.codex/
+.DS_Store
+.env
