@@ -15,7 +15,7 @@ your subscriptions (Claude login and ChatGPT login). No API keys.
 ## Start it
 
 ```bash
-git clone https://github.com/<you>/dual-workspace.git
+git clone https://github.com/siyi1875/dual-workspace.git
 cd dual-workspace
 python3 ws.py serve
 ```
